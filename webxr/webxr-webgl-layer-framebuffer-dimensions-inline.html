@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebXR Inline Sample</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        #xr-canvas {
+            border: 1px solid #ccc;
+            display: block;
+            margin: 20px auto;
+        }
+        .controls {
+            text-align: center;
+            margin: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 5px;
+        }
+        #status {
+            text-align: center;
+            margin: 20px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>WebXR Inline Sample</h1>
+    <div class="controls">
+        <button id="exit-xr" disabled>Exit XR</button>
+    </div>
+    <div id="status">WebXR not initialized</div>
+    <canvas id="xr-canvas" width="800" height="600"></canvas>
+    
+    <script>
+        let xrSession = null;
+        let gl = null;
+        let xrLayer = null;
+        
+        const canvas = document.getElementById('xr-canvas');
+        const exitXRButton = document.getElementById('exit-xr');
+        const statusDiv = document.getElementById('status');
+        
+        function updateStatus(message) {
+            statusDiv.textContent = message;
+            console.log(message);
+        }
+        
+        async function initializeWebXR() {
+            if (!navigator.xr) {
+                updateStatus('WebXR not supported');
+                return false;
+            }
+            
+            try {
+                const supported = await navigator.xr.isSessionSupported('inline');
+                if (!supported) {
+                    updateStatus('Inline XR not supported');
+                    return false;
+                }
+                
+                updateStatus('WebXR ready');
+                // Automatically start inline session
+                await enterXR();
+                return true;
+            } catch (error) {
+                updateStatus('Error checking WebXR support: ' + error.message);
+                return false;
+            }
+        }
+        
+        async function enterXR() {
+            try {
+                updateStatus('Requesting inline XR session...');
+                
+                // Get WebGL context
+                gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+                if (!gl) {
+                    throw new Error('Failed to get WebGL context');
+                }
+                
+                // Make context XR compatible
+                await gl.makeXRCompatible();
+                
+                // Request inline XR session
+                xrSession = await navigator.xr.requestSession('inline', {
+                    requiredFeatures: ['local']
+                });
+                
+                // Create XR layer
+                xrLayer = new XRWebGLLayer(xrSession, gl);
+                await xrSession.updateRenderState({ baseLayer: xrLayer });
+                
+                // Request reference space
+                xrSession.referenceSpace = await xrSession.requestReferenceSpace('local');
+                
+                updateStatus('Inline XR session active');
+                exitXRButton.disabled = false;
+                
+                // Log framebuffer dimensions
+                console.log('XR Layer framebuffer dimensions:', 
+                    xrLayer.framebufferWidth, 'x', xrLayer.framebufferHeight);
+                
+                // Start render loop
+                xrSession.requestAnimationFrame(onXRFrame);
+                
+            } catch (error) {
+                updateStatus('Error entering XR: ' + error.message);
+                console.error(error);
+            }
+        }
+        
+        function onXRFrame(time, frame) {
+            if (!xrSession) return;
+            
+            // Basic render loop
+            const session = frame.session;
+            const pose = frame.getViewerPose(xrSession.referenceSpace);
+            
+            if (pose) {
+                gl.bindFramebuffer(gl.FRAMEBUFFER, xrLayer.framebuffer);
+                gl.clearColor(0.0, 0.2, 0.0, 1.0);
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                
+                // Render each view (inline typically has one view)
+                for (const view of pose.views) {
+                    const viewport = xrLayer.getViewport(view);
+                    gl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
+                    
+                    // Green background for inline session
+                    gl.clearColor(0.0, 0.3, 0.0, 1.0);
+                    gl.clear(gl.COLOR_BUFFER_BIT);
+                }
+            }
+            
+            session.requestAnimationFrame(onXRFrame);
+        }
+        
+        function exitXR() {
+            if (xrSession) {
+                xrSession.end();
+                xrSession = null;
+                xrLayer = null;
+                gl = null;
+                
+                updateStatus('XR session ended');
+                exitXRButton.disabled = true;
+            }
+        }
+        
+        // Event listeners
+        exitXRButton.addEventListener('click', exitXR);
+        
+        // Initialize
+        initializeWebXR();
+    </script>
+</body>
+</html>
