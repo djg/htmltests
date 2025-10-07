@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebGL Video texSubImage2D Performance Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        #gl-canvas {
+            border: 1px solid #ccc;
+            display: block;
+            margin: 20px auto;
+        }
+        #video {
+            display: none;
+        }
+        .controls {
+            text-align: center;
+            margin: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 5px;
+        }
+        #fps-display {
+            text-align: center;
+            margin: 20px;
+            font-weight: bold;
+            font-size: 24px;
+        }
+        #histogram {
+            margin: 20px auto;
+            display: block;
+            border: 1px solid #ccc;
+        }
+    </style>
+</head>
+<body>
+    <h1>WebGL Video texSubImage2D Performance Test</h1>
+    <canvas id="gl-canvas" width="800" height="600"></canvas>
+    <video id="video" crossorigin="anonymous" loop></video>
+
+    <div class="controls">
+        <button id="start-btn">Start Test</button>
+        <button id="stop-btn">Stop Test</button>
+    </div>
+
+    <div id="fps-display">FPS: --</div>
+    <canvas id="histogram" width="800" height="200"></canvas>
+
+    <script>
+        // Vertex shader
+        const vertexShaderSource = `
+            attribute vec4 a_position;
+            attribute vec2 a_texCoord;
+            varying vec2 v_texCoord;
+
+            void main() {
+                gl_Position = a_position;
+                v_texCoord = a_texCoord;
+            }
+        `;
+
+        // Fragment shader
+        const fragmentShaderSource = `
+            precision mediump float;
+            varying vec2 v_texCoord;
+            uniform sampler2D u_texture;
+
+            void main() {
+                gl_FragColor = texture2D(u_texture, v_texCoord);
+            }
+        `;
+
+        const canvas = document.getElementById('gl-canvas');
+        const video = document.getElementById('video');
+        const fpsDisplay = document.getElementById('fps-display');
+        const histogramCanvas = document.getElementById('histogram');
+        const histogramCtx = histogramCanvas.getContext('2d');
+
+        let gl = null;
+        let program = null;
+        let texture = null;
+        let animationId = null;
+
+        // FPS tracking
+        let frameCount = 0;
+        let lastTime = performance.now();
+        let fps = 0;
+        let fpsHistory = [];
+        const MAX_HISTORY = 100;
+
+        function initWebGL() {
+            gl = canvas.getContext('webgl');
+            if (!gl) {
+                alert('WebGL not supported');
+                return false;
+            }
+
+            // Create shaders
+            const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+            const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+
+            // Create program
+            program = createProgram(gl, vertexShader, fragmentShader);
+            gl.useProgram(program);
+
+            // Create quad vertices
+            const positions = new Float32Array([
+                -1, -1,
+                 1, -1,
+                -1,  1,
+                 1,  1,
+            ]);
+
+            const texCoords = new Float32Array([
+                0, 1,
+                1, 1,
+                0, 0,
+                1, 0,
+            ]);
+
+            // Position buffer
+            const positionBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+            const positionLoc = gl.getAttribLocation(program, 'a_position');
+            gl.enableVertexAttribArray(positionLoc);
+            gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
+
+            // TexCoord buffer
+            const texCoordBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
+
+            const texCoordLoc = gl.getAttribLocation(program, 'a_texCoord');
+            gl.enableVertexAttribArray(texCoordLoc);
+            gl.vertexAttribPointer(texCoordLoc, 2, gl.FLOAT, false, 0, 0);
+
+            // Create texture
+            texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+            return true;
+        }
+
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+
+            return shader;
+        }
+
+        function createProgram(gl, vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('Program link error:', gl.getProgramInfoLog(program));
+                gl.deleteProgram(program);
+                return null;
+            }
+
+            return program;
+        }
+
+        function updateFPS() {
+            const currentTime = performance.now();
+            frameCount++;
+
+            if (currentTime >= lastTime + 1000) {
+                fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+                fpsDisplay.textContent = `FPS: ${fps}`;
+
+                // Add to history
+                fpsHistory.push(fps);
+                if (fpsHistory.length > MAX_HISTORY) {
+                    fpsHistory.shift();
+                }
+
+                updateHistogram();
+
+                frameCount = 0;
+                lastTime = currentTime;
+            }
+        }
+
+        function updateHistogram() {
+            const width = histogramCanvas.width;
+            const height = histogramCanvas.height;
+            const barWidth = width / MAX_HISTORY;
+
+            histogramCtx.clearRect(0, 0, width, height);
+
+            // Find max FPS for scaling
+            const maxFps = Math.max(...fpsHistory, 60);
+
+            // Draw bars
+            fpsHistory.forEach((fps, index) => {
+                const barHeight = (fps / maxFps) * (height - 40);
+                const x = index * barWidth;
+                const y = height - barHeight - 20;
+
+                // Color based on FPS
+                if (fps >= 50) {
+                    histogramCtx.fillStyle = '#4CAF50';
+                } else if (fps >= 30) {
+                    histogramCtx.fillStyle = '#FFC107';
+                } else {
+                    histogramCtx.fillStyle = '#F44336';
+                }
+
+                histogramCtx.fillRect(x, y, barWidth - 1, barHeight);
+            });
+
+            // Draw reference lines
+            histogramCtx.strokeStyle = '#999';
+            histogramCtx.lineWidth = 1;
+            histogramCtx.setLineDash([5, 5]);
+
+            // 60 FPS line
+            const fps60Y = height - (60 / maxFps) * (height - 40) - 20;
+            histogramCtx.beginPath();
+            histogramCtx.moveTo(0, fps60Y);
+            histogramCtx.lineTo(width, fps60Y);
+            histogramCtx.stroke();
+
+            // Labels
+            histogramCtx.setLineDash([]);
+            histogramCtx.fillStyle = '#000';
+            histogramCtx.font = '12px Arial';
+            histogramCtx.fillText('60 FPS', 5, fps60Y - 5);
+            histogramCtx.fillText('0 FPS', 5, height - 5);
+        }
+
+        function render() {
+            if (video.readyState >= video.HAVE_CURRENT_DATA) {
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+
+                // Use texSubImage2D to update texture with video frame
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, video);
+
+                gl.clear(gl.COLOR_BUFFER_BIT);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+                updateFPS();
+            }
+
+            animationId = requestAnimationFrame(render);
+        }
+
+        function startTest() {
+            if (!video.src) {
+                video.src = 'https://oculus-mp4.s3.amazonaws.com/immersive+video+8K+for+Oculus+Browser/everestvr_4.3k_30s_360_h264_crf23_binaural_CREDIT_JON_GRIFFITH_injected.mp4';
+
+                video.onloadeddata = () => {
+                    // Initialize texture with video dimensions
+                    gl.bindTexture(gl.TEXTURE_2D, texture);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+
+                    video.play();
+                    frameCount = 0;
+                    lastTime = performance.now();
+                    render();
+                };
+            } else {
+                video.play();
+                frameCount = 0;
+                lastTime = performance.now();
+                render();
+            }
+        }
+
+        function stopTest() {
+            video.pause();
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+        }
+
+        // Initialize
+        if (initWebGL()) {
+            document.getElementById('start-btn').addEventListener('click', startTest);
+            document.getElementById('stop-btn').addEventListener('click', stopTest);
+        }
+    </script>
+</body>
+</html>
