@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>WebGL Video texImage2D Performance Test</title>
+    <title>WebGL Video texSubImage2D Performance Test</title>
     <style>
         body {
             margin: 0;
@@ -39,7 +39,7 @@
     </style>
 </head>
 <body>
-    <h1>WebGL Video texImage2D Performance Test</h1>
+    <h1>WebGL Video texSubImage2D Performance Test</h1>
     <canvas id="gl-canvas" width="800" height="600"></canvas>
     <video id="video" crossorigin="anonymous" loop></video>
 
@@ -264,8 +264,8 @@
             if (video.readyState >= video.HAVE_CURRENT_DATA) {
                 gl.bindTexture(gl.TEXTURE_2D, texture);
 
-                // Use texImage2D to update texture with video frame
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+                // Use texSubImage2D to update texture with video frame
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, video);
 
                 gl.clear(gl.COLOR_BUFFER_BIT);
                 gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);

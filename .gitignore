@@ -1,0 +1,41 @@
+# Claude
+.claude/
+
+# Python
+.python-version
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+*.egg-info/
+dist/
+build/
+uv.lock
+
+# Media files
+*.atrc
+*.mp4
+*.webm
+*.avi
+*.mov
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

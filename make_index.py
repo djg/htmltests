@@ -68,7 +68,17 @@ INDEX_TEMPLATE = r"""
 </html>
 """
 
-EXCLUDED = ['index.html', '.git', '.venv']
+EXCLUDED = [
+    '.claude',
+    '.git',
+    '.gitignore',
+    '.python-version',
+    '.venv',
+    'index.html',
+    'make_index.py',
+    'pyproject.toml',
+    'uv.lock'
+]
 
 import os
 import argparse
